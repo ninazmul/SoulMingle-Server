@@ -8,7 +8,16 @@ const jwt = require('jsonwebtoken');
 // middleware
 app.use(cors());
 app.use(express.json());
-
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://soul-mingle.web.app/",
+      "https://soul-mingle-server.vercel.app/",
+    ],
+    credentials: true,
+  })
+);
 
 const uri =
   `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.pc5txjd.mongodb.net/?retryWrites=true&w=majority`;

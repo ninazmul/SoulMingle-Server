@@ -4,10 +4,11 @@ const cors = require('cors');
 require('dotenv').config();
 const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-
+const jwt = require('jsonwebtoken');
 // middleware
 app.use(cors());
 app.use(express.json());
+
 
 const uri =
   `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.pc5txjd.mongodb.net/?retryWrites=true&w=majority`;
@@ -32,6 +33,14 @@ async function run() {
 
     const userCollection = client.db("BioDB").collection("UserData");
 
+
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
+      res.send({ token });
+    });
+
+
     app.post("/user", async (req, res) => {
       const user = req.body;
       const query = { email: user.email }
@@ -41,7 +50,55 @@ async function run() {
       }
       const result = await userCollection.insertOne(user);
       res.send(result);
-    })
+    });
+    app.get("/user",  async (req, res) => {
+      const result = await userCollection.find().toArray();
+      res.send(result);
+    });
+
+    const verifytoken = (req, res, next) => {
+      // console.log(req.headers);
+      if (!req.headers.authorization) {
+        return res.status(401).send({ message: "forbidden access" });
+      }
+      const token = req.headers.authorization.split(" ")[1];
+      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        if (err) {
+          return res.status(401).send({ message: "forbidden access" });
+        }
+        req.decoded = decoded;
+        next();
+      });
+    };
+
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      const isAdmin = user?.role === "admin";
+      if (!isAdmin) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      next();
+    };
+
+    app.get(
+      "/user/admin/:email",
+      verifytoken,
+      async (req, res) => {
+        const email = req.params.email;
+        if (email !== req.decoded.email) {
+          return res.status(403).send({ message: "unauthorized access" });
+        }
+        const query = { email: email };
+        const user = await userCollection.findOne(query);
+        let admin = false;
+        if (user) {
+          admin = user?.role === "admin";
+        }
+        res.send({ admin });
+      }
+    );
 
     app.get("/user/:email", async(req, res) => {
       try {
@@ -59,10 +116,74 @@ async function run() {
       }
     });
 
+    app.patch("/user/admin/:id", verifytoken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          role: "admin",
+        },
+      };
+      const result = await userCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
+
+    app.post("/bioData", async (req, res) => {
+      const createBio = req.body;
+      const result = await bioDataCollection.insertOne(createBio);
+      res.send(result);
+    });
+
+    app.put("/bioData/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const options = { upsert: true };
+      const updateBio = req.body;
+
+      const Bio = {
+        $set: {
+          Name: updateBio.Name,
+          BiodataType: updateBio.BiodataType,
+          ProfileImage: updateBio.ProfileImage,
+          PermanentDivision: updateBio.PermanentDivision,
+          Age: updateBio.Age,
+          Occupation: updateBio.Occupation,
+          Subscription: updateBio.Subscription,
+          DateOfBirth: updateBio.DateOfBirth,
+          Height: updateBio.Height,
+          Weight: updateBio.Weight,
+          Race: updateBio.Race,
+          FathersName: updateBio.FathersName,
+          MothersName: updateBio.MothersName,
+          PresentDivision: updateBio.PresentDivision,
+          ExpectedPartnerAge: updateBio.ExpectedPartnerAge,
+          ExpectedPartnerHeight: updateBio.ExpectedPartnerHeight,
+          ExpectedPartnerWeight: updateBio.ExpectedPartnerWeight,
+          Email: updateBio.Email,
+          MobileNumber: updateBio.MobileNumber,
+        },
+      };
+
+      try {
+        const result = await bioDataCollection.updateOne(filter, Bio, options);
+        res.send(result);
+      } catch (error) {
+        console.error("Error updating bio:", error.message);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    });
+
+
       app.get("/bioData", async (req, res) => {
           const result = await bioDataCollection.find().toArray();
           res.send(result);
       });
+    app.delete("/bioData/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await bioDataCollection.deleteOne(query);
+      res.send(result);
+    });
 
      app.get("/bioData/:id", async (req, res) => {
        try {
